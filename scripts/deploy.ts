@@ -6,14 +6,14 @@
 import { ethers } from "hardhat";
 
 const contracts = [
-  // {
-  //   name: "Greeter",
-  //   params: ["Hello"],
-  // },
   {
-    name: "ERC20",
-    params: ["1408", "1408", 18, 1000000],
-  },
+    name: "RDX",
+    params: [18, '1000000000000000000000000']
+  }
+  // {
+  //   name: "ERC20",
+  //   params: ["1408", "1408", 18, 1000000],
+  // },
 ];
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command
