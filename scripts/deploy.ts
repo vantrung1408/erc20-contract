@@ -9,11 +9,11 @@ const contracts = [
   {
     name: "RDX",
     params: [18, '1000000000000000000000000']
-  }
-  // {
-  //   name: "ERC20",
-  //   params: ["1408", "1408", 18, 1000000],
-  // },
+  },
+  {
+    name: "RDL",
+    params: [18],
+  },
 ];
 async function main() {
   // Hardhat always runs the compile task when running scripts with its command

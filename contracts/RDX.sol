@@ -7,6 +7,6 @@ contract RDX is ERC20 {
         uint8 tokenDecimals,
         uint256 tokenMaxTotalSupply
     ) ERC20("RDX token", "RDX", tokenDecimals, tokenMaxTotalSupply) {
-        this._mint(this._creator, this._maxTotalSupply);
+        _mint(msg.sender, _maxTotalSupply);
     }
 }

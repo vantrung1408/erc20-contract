@@ -27,12 +27,12 @@ describe("RDX token creator", () => {
 
   describe("constructing", () => {
     it("contract deployed successfully", async () => {
-      expect(contract.address).not.equal(undefined);
+      expect(contract.address).not.eq(undefined);
     });
 
     it("contructor working as expect", async () => {
-      expect(await contract.decimals()).equal(decimals);
-      expect(await contract.maxTotalSupply()).equal(maxTotalSupply);
+      expect(await contract.decimals()).eq(decimals);
+      expect(await contract.maxTotalSupply()).eq(maxTotalSupply);
       expect(await contract.balanceOf(owner.address)).eq(maxTotalSupply);
     });
   });

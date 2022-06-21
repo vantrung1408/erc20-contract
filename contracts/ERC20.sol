@@ -6,7 +6,6 @@ import "./IERC20.sol";
 Basic ERC20 implementation
  */
 contract ERC20 is IERC20 {
-    address internal _creator;
     string internal _name;
     string internal _symbol;
     uint8 internal _decimals;
@@ -21,7 +20,6 @@ contract ERC20 is IERC20 {
         uint8 tokenDecimals,
         uint256 tokenMaxTotalSupply
     ) {
-        _creator = msg.sender;
         _name = tokenName;
         _symbol = tokenSymbol;
         _decimals = tokenDecimals;
@@ -127,11 +125,11 @@ contract ERC20 is IERC20 {
     }
 
     /**
-    owner deposit _value of balance to _to
+    deposit _value of balance to _to
      */
     function _mint(address to, uint256 value) internal returns (bool success) {
         require(
-            value <= _maxTotalSupply - _totalSupply,
+            value + _totalSupply <= _maxTotalSupply,
             "Value to mint not valid"
         );
 
