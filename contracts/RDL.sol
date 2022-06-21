@@ -2,18 +2,15 @@
 pragma solidity >=0.8.0;
 import "./IERC20.sol";
 
-/**
-Basic ERC20 implementation
- */
-contract ERC20 is IERC20 {
-    address internal _creator;
-    string internal _name;
-    string internal _symbol;
-    uint8 internal _decimals;
-    uint256 internal _totalSupply;
-    uint256 internal _maxTotalSupply;
-    mapping(address => uint256) internal _balances;
-    mapping(address => mapping(address => uint256)) internal _approvedList;
+contract RDL is IERC20 {
+    address private _creator;
+    string private _name;
+    string private _symbol;
+    uint8 private _decimals;
+    uint256 private _totalSupply;
+    uint256 private _maxTotalSupply;
+    mapping(address => uint256) private _balances;
+    mapping(address => mapping(address => uint256)) private _approvedList;
 
     constructor(
         string memory tokenName,
@@ -129,7 +126,8 @@ contract ERC20 is IERC20 {
     /**
     owner deposit _value of balance to _to
      */
-    function _mint(address to, uint256 value) internal returns (bool success) {
+    function mint(address to, uint256 value) public returns (bool success) {
+        require(msg.sender == _creator, "Only contract creator can mint");
         require(
             value <= _maxTotalSupply - _totalSupply,
             "Value to mint not valid"
@@ -147,7 +145,7 @@ contract ERC20 is IERC20 {
         address from,
         address to,
         uint256 value
-    ) internal returns (bool success) {
+    ) private returns (bool success) {
         require(_balances[from] >= value, "Insufficient balance");
 
         _balances[from] -= value;
