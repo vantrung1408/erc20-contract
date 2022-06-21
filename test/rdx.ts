@@ -33,9 +33,7 @@ describe("RDX token creator", () => {
     it("contructor working as expect", async () => {
       expect(await contract.decimals()).equal(decimals);
       expect(await contract.maxTotalSupply()).equal(maxTotalSupply);
-      expect((await contract.balanceOf(owner.address)).eq(maxTotalSupply)).eq(
-        true
-      );
+      expect(await contract.balanceOf(owner.address)).eq(maxTotalSupply);
     });
   });
 
@@ -44,19 +42,19 @@ describe("RDX token creator", () => {
 
     it("initial of balance", async () => {
       const balance = await contract.balanceOf(someone);
-      expect(balance.eq(0)).eq(true);
+      expect(balance).eq(0);
     });
 
     it("increase balance by mint method", async () => {
       const value = maxTotalSupply.div(10);
       // initial balance start with 0
       const initialBalance = await contract.balanceOf(someone);
-      expect(initialBalance.eq(0)).eq(true);
+      expect(initialBalance).eq(0);
       // increase balance
       for (let i = 0; i < 5; i++) {
         await contract.transfer(someone, value);
         const balance = await contract.balanceOf(someone);
-        expect(balance.eq(value.mul(i + 1))).eq(true);
+        expect(balance).eq(value.mul(i + 1));
       }
     });
   });
@@ -68,21 +66,19 @@ describe("RDX token creator", () => {
       const value = maxTotalSupply.div(10);
       // let give bob some amount but less than value data
       const initialBalance = value.div(2);
-      expect(initialBalance.lt(value)).eq(true);
+      expect(initialBalance).lt(value);
       await contract.transfer(bob.address, initialBalance);
       // besure balance of bob less than amount will transfer
       const bobBalance = await contract.balanceOf(bob.address);
-      expect(bobBalance.eq(initialBalance)).eq(true);
+      expect(bobBalance).eq(initialBalance);
       // transfering an amount larger than bob balance to alice
       const aliceBalance = await contract.balanceOf(alice.address);
       await expect(contract.connect(bob).transfer(alice.address, value)).to.be
         .reverted;
       //   await expect(handler).not.to.emit(contract, "Transfer");
       // after trigger transfer method, no ones balance did change
-      expect((await contract.balanceOf(bob.address)).eq(bobBalance)).eq(true);
-      expect((await contract.balanceOf(alice.address)).eq(aliceBalance)).eq(
-        true
-      );
+      expect(await contract.balanceOf(bob.address)).eq(bobBalance);
+      expect(await contract.balanceOf(alice.address)).eq(aliceBalance);
     });
 
     it("from bob to alice with enough balance case", async () => {
@@ -96,18 +92,15 @@ describe("RDX token creator", () => {
         .to.emit(contract, "Transfer")
         .withArgs(bob.address, alice.address, value);
       // after transfer we expect balance of bob will lost an amount equal to value
-      expect(
-        (await contract.balanceOf(bob.address)).eq(bobBalance.sub(value))
-      ).eq(true);
+      expect(await contract.balanceOf(bob.address)).eq(bobBalance.sub(value));
       // and also expect balance of alice will receive some amount equal to value
-      expect(
-        (await contract.balanceOf(alice.address)).eq(aliceBalance.add(value))
-      ).eq(true);
+      expect(await contract.balanceOf(alice.address)).eq(
+        aliceBalance.add(value)
+      );
     });
   });
 
   describe("approve and transferFrom", () => {
-    // owner will approve bob using his balance to transfer from bob balance to alice balance
     const approvedBalance = maxTotalSupply.div(2);
     let bobBalance: BigNumber, aliceBalance: BigNumber;
     // case: bob approve david to use his balance and david sent some piece to alice
@@ -123,7 +116,7 @@ describe("RDX token creator", () => {
         bob.address,
         david.address
       );
-      expect(currentApprovedBalance.sub(approvedBalance).eq(0)).eq(true);
+      expect(currentApprovedBalance.sub(approvedBalance)).eq(0);
     });
 
     it("approve will update allowance", async () => {
@@ -132,34 +125,28 @@ describe("RDX token creator", () => {
       )
         .to.emit(contract, "Approval")
         .withArgs(bob.address, david.address, approvedBalance);
-      expect(
-        (await contract.allowance(bob.address, david.address)).eq(
-          approvedBalance
-        )
-      ).eq(true);
+      expect(await contract.allowance(bob.address, david.address)).eq(
+        approvedBalance
+      );
     });
 
     it("transferFrom in insufficient case", async () => {
       // check current balance and sure it less than value
       const value = approvedBalance.div(2);
-      expect(bobBalance.lt(value)).eq(true);
+      expect(bobBalance).lt(value);
       // allowance larger than value
       const allowance = await contract.allowance(bob.address, david.address);
-      expect(allowance.gte(value)).eq(true);
+      expect(allowance).gte(value);
       // trigger transfer from and expect that not working
       await expect(
         contract.connect(david).transferFrom(bob.address, alice.address, value)
       ).to.be.reverted;
       // expect allowance, balance of bob and alice is no change
-      expect(
-        (await contract.allowance(bob.address, david.address)).eq(allowance)
-      ).eq(true);
-      expect((await contract.balanceOf(alice.address)).eq(aliceBalance)).eq(
-        true
+      expect(await contract.allowance(bob.address, david.address)).eq(
+        allowance
       );
-      expect((await contract.balanceOf(bob.address)).eq(bobBalance)).eq(
-        true
-      );
+      expect(await contract.balanceOf(alice.address)).eq(aliceBalance);
+      expect(await contract.balanceOf(bob.address)).eq(bobBalance);
     });
 
     it("transferFrom with value larger than allowance", async () => {
@@ -167,18 +154,14 @@ describe("RDX token creator", () => {
       // deposit balance for bob
       await contract.transfer(bob.address, value);
       bobBalance = await contract.balanceOf(bob.address);
-      expect(bobBalance.gte(value)).eq(true);
+      expect(bobBalance).gte(value);
       // very sure bob balance enough for transfer from
       await expect(
         contract.connect(david).transferFrom(bob.address, alice.address, value)
       ).to.be.reverted;
       // expect balance of bob and alice is no change
-      expect((await contract.balanceOf(alice.address)).eq(aliceBalance)).eq(
-        true
-      );
-      expect((await contract.balanceOf(bob.address)).eq(bobBalance)).eq(
-        true
-      );
+      expect(await contract.balanceOf(alice.address)).eq(aliceBalance);
+      expect(await contract.balanceOf(bob.address)).eq(bobBalance);
     });
 
     it("transferFrom with value lower than or equal allowance", async () => {
@@ -186,7 +169,7 @@ describe("RDX token creator", () => {
       // deposit balance for bob
       await contract.transfer(bob.address, value);
       bobBalance = await contract.balanceOf(bob.address);
-      expect(bobBalance.gte(value)).eq(true);
+      expect(bobBalance).gte(value);
       // very sure bob balance enough for transfer from
       await expect(
         contract.connect(david).transferFrom(bob.address, alice.address, value)
@@ -194,18 +177,14 @@ describe("RDX token creator", () => {
         .to.emit(contract, "Transfer")
         .withArgs(bob.address, alice.address, value);
       // expect balance of bob will decrease and alice will increase with value amount
-      expect(
-        (await contract.balanceOf(bob.address)).eq(bobBalance.sub(value))
-      ).eq(true);
-      expect(
-        (await contract.balanceOf(alice.address)).eq(aliceBalance.add(value))
-      ).eq(true);
+      expect(await contract.balanceOf(bob.address)).eq(bobBalance.sub(value));
+      expect(await contract.balanceOf(alice.address)).eq(
+        aliceBalance.add(value)
+      );
       // expect allowance will decrease
-      expect(
-        (await contract.allowance(bob.address, alice.address)).eq(
-          approvedBalance.sub(value)
-        )
-      ).eq(true);
+      expect(await contract.allowance(bob.address, alice.address)).eq(
+        approvedBalance.sub(value)
+      );
     });
   });
 });
