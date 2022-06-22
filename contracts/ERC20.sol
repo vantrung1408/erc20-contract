@@ -10,20 +10,17 @@ contract ERC20 is IERC20 {
     string internal _symbol;
     uint8 internal _decimals;
     uint256 internal _totalSupply;
-    uint256 internal _maxTotalSupply;
     mapping(address => uint256) internal _balances;
     mapping(address => mapping(address => uint256)) internal _approvedList;
 
     constructor(
         string memory tokenName,
         string memory tokenSymbol,
-        uint8 tokenDecimals,
-        uint256 tokenMaxTotalSupply
+        uint8 tokenDecimals
     ) {
         _name = tokenName;
         _symbol = tokenSymbol;
         _decimals = tokenDecimals;
-        _maxTotalSupply = tokenMaxTotalSupply;
     }
 
     /**
@@ -52,13 +49,6 @@ contract ERC20 is IERC20 {
      */
     function totalSupply() public view override returns (uint256) {
         return _totalSupply;
-    }
-
-    /**
-    max total supply of token, can not be mint more than this value
-     */
-    function maxTotalSupply() public view returns (uint256) {
-        return _maxTotalSupply;
     }
 
     /**
@@ -122,20 +112,6 @@ contract ERC20 is IERC20 {
         returns (uint256 remaining)
     {
         return _approvedList[owner][spender];
-    }
-
-    /**
-    deposit _value of balance to _to
-     */
-    function _mint(address to, uint256 value) internal returns (bool success) {
-        require(
-            value + _totalSupply <= _maxTotalSupply,
-            "Value to mint not valid"
-        );
-
-        _totalSupply += value;
-        _balances[to] += value;
-        return true;
     }
 
     /**
