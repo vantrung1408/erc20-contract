@@ -1,65 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.8.0;
+import "./IERC20.sol";
 
-interface IERC20 {
-    function name() external view returns (string memory);
-
-    function symbol() external view returns (string memory);
-
-    function decimals() external view returns (uint8);
-
-    function totalSupply() external view returns (uint256);
-
-    function balanceOf(address _owner) external view returns (uint256 balance);
-
-    function transfer(address _to, uint256 _value)
-        external
-        returns (bool success);
-
-    function transferFrom(
-        address _from,
-        address _to,
-        uint256 _value
-    ) external returns (bool success);
-
-    function approve(address _spender, uint256 _value)
-        external
-        returns (bool success);
-
-    function allowance(address _owner, address _spender)
-        external
-        view
-        returns (uint256 remaining);
-
-    event Transfer(address indexed _from, address indexed _to, uint256 _value);
-    event Approval(
-        address indexed _owner,
-        address indexed _spender,
-        uint256 _value
-    );
-}
-
+/**
+Basic ERC20 implementation
+ */
 contract ERC20 is IERC20 {
-    address private _creator;
-    string private _name;
-    string private _symbol;
-    uint8 private _decimals;
-    uint256 private _totalSupply;
-    uint256 private _maxTotalSupply;
-    mapping(address => uint256) private _balances;
-    mapping(address => mapping(address => uint256)) private _approvedList;
+    string internal _name;
+    string internal _symbol;
+    uint8 internal _decimals;
+    uint256 internal _totalSupply;
+    mapping(address => uint256) internal _balances;
+    mapping(address => mapping(address => uint256)) internal _approvedList;
 
     constructor(
         string memory tokenName,
         string memory tokenSymbol,
-        uint8 tokenDecimals,
-        uint256 tokenMaxTotalSupply
+        uint8 tokenDecimals
     ) {
-        _creator = msg.sender;
         _name = tokenName;
         _symbol = tokenSymbol;
         _decimals = tokenDecimals;
-        _maxTotalSupply = tokenMaxTotalSupply;
     }
 
     /**
@@ -88,13 +49,6 @@ contract ERC20 is IERC20 {
      */
     function totalSupply() public view override returns (uint256) {
         return _totalSupply;
-    }
-
-    /**
-    max total supply of token, can not be mint more than this value
-     */
-    function maxTotalSupply() public view returns (uint256) {
-        return _maxTotalSupply;
     }
 
     /**
@@ -161,28 +115,13 @@ contract ERC20 is IERC20 {
     }
 
     /**
-    owner deposit _value of balance to _to
-     */
-    function mint(address to, uint256 value) public returns (bool success) {
-        require(msg.sender == _creator, "Only contract creator can mint");
-        require(
-            value <= _maxTotalSupply - _totalSupply,
-            "Value to mint not valid"
-        );
-
-        _totalSupply += value;
-        _balances[to] += value;
-        return true;
-    }
-
-    /**
     Transfer _value of balance from _from to _to and emit the Transfer event
      */
     function _transfer(
         address from,
         address to,
         uint256 value
-    ) private returns (bool success) {
+    ) internal returns (bool success) {
         require(_balances[from] >= value, "Insufficient balance");
 
         _balances[from] -= value;
