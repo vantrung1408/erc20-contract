@@ -7,13 +7,21 @@ import { ethers } from 'hardhat'
 import { utils } from 'ethers'
 
 const contracts = [
+  // {
+  //   name: 'RDX',
+  //   params: [18, utils.parseUnits('1000000', 18)],
+  // },
+  // {
+  //   name: 'RDL',
+  //   params: [18],
+  // },
   {
-    name: 'RDX',
-    params: [18, utils.parseUnits('1000000', 18)],
-  },
-  {
-    name: 'RDL',
-    params: [18],
+    name: 'MasterChef',
+    params: [
+      '0x60d103125f5c9cdE0e9D5929179C58AFF7F8e7AD',
+      '0xf7A8FA906210b29A381a1e3bb80d69B4bFD7491B',
+      utils.parseUnits('0.01', 18),
+    ],
   },
 ]
 async function main() {
@@ -29,7 +37,11 @@ async function main() {
     const contractFactory = await ethers.getContractFactory(name)
     const contract = await contractFactory.deploy.apply(contractFactory, params)
     await contract.deployed()
-    console.log(`${name} deployed to: ${contract.address} with constructor params: ${params.join(' ')}`)
+    console.log(
+      `${name} deployed to: ${
+        contract.address
+      } with constructor params: ${params.join(' ')}`
+    )
   }
 }
 
