@@ -10,10 +10,13 @@ describe('masterchef', () => {
     rdx: RDX,
     masterchef: MasterChef,
     rdxOwner: SignerWithAddress,
-    bob: SignerWithAddress
+    bob: SignerWithAddress,
+    alice: SignerWithAddress,
+    ACC_PER_SHARE_PRECISION: BigNumber
   const decimals: number = 18,
     rdxSupply: BigNumber = utils.parseUnits('1000000', decimals),
-    rewardPerBlock: BigNumber = utils.parseUnits('0.001', 18)
+    chefMaxRDXSupply: BigNumber = rdxSupply.div(10),
+    rewardPerBlock: BigNumber = utils.parseUnits('1', 18)
 
   const deploy = async () => {
     // deploy rdl
@@ -35,22 +38,15 @@ describe('masterchef', () => {
     )
     await masterchef.deployed()
     // assign owner
-    ;[rdxOwner, bob] = await ethers.getSigners()
+    ;[rdxOwner, bob, alice] = await ethers.getSigners()
+    await rdx.connect(rdxOwner).transfer(masterchef.address, chefMaxRDXSupply)
+    ACC_PER_SHARE_PRECISION = await masterchef.ACC_PER_SHARE_PRECISION()
   }
 
-  const calculateReward = async (
-    balance: BigNumber,
-    blockNumber: number,
-    startBlock: number,
-    correction: BigNumber
-  ) => {
-    const chefRDL = await rdl.balanceOf(masterchef.address)
-    const ratio = balance.div(chefRDL)
-    return ratio
-      .mul(blockNumber - startBlock)
-      .mul(balance)
-      .mul(rewardPerBlock)
-      .sub(correction)
+  const advanceBlockTo = async (blockNumber) => {
+    for (let i = await ethers.provider.getBlockNumber(); i < blockNumber; i++) {
+      await ethers.provider.send('evm_mine', [])
+    }
   }
 
   describe('constructing', () => {
@@ -99,15 +95,13 @@ describe('masterchef', () => {
       // user info checking
       const user = await masterchef.users(bob.address)
       expect(user.balance).eq(amount)
-      expect(user.startBlock).eq(tx.blockNumber)
-      expect(user.rewardCorrection).eq(0)
+      expect(user.rewardDebt).eq(0)
     })
 
     it('deposit with in range approved amount n times', async () => {
       const n: number = 3
       const amount: BigNumber = utils.parseUnits('10', decimals)
-      let startBlock: number,
-        reward: BigNumber = BigNumber.from('0')
+      let lastRewardBlock: number
 
       await rdl.mint(bob.address, amount.mul(n))
       await rdl.connect(bob).approve(masterchef.address, constants.MaxUint256)
@@ -116,22 +110,12 @@ describe('masterchef', () => {
         const tx = await masterchef.deposit(bob.address, amount)
         const user = await masterchef.users(bob.address)
         if (i) {
-          const rewardAtBlock = await calculateReward(
-            amount,
-            tx.blockNumber,
-            startBlock,
-            BigNumber.from('0')
-          )
-          reward = reward.add(rewardAtBlock)
-
           expect(user.balance).eq(amount.mul(1 + i))
-          expect(user.startBlock).eq(startBlock)
-          expect(user.rewardCorrection).eq(reward)
         } else {
-          startBlock = tx.blockNumber
           expect(user.balance).eq(amount)
-          expect(user.rewardCorrection).eq(0)
+          expect(user.rewardDebt).eq(0)
         }
+        lastRewardBlock = tx.blockNumber
       }
       expect(await rdl.balanceOf(bob.address)).eq(0)
       expect(await rdl.balanceOf(masterchef.address)).eq(amount.mul(n))
@@ -145,7 +129,7 @@ describe('masterchef', () => {
       await rdl.mint(bob.address, constants.MaxUint256)
     })
 
-    it('withdraw with inefficient user balance', async () => {
+    it('withdraw with insufficient user balance', async () => {
       const amount: BigNumber = utils.parseUnits('10', decimals)
       await masterchef.deposit(bob.address, amount.div(2))
       const user = await masterchef.users(bob.address)
@@ -153,18 +137,100 @@ describe('masterchef', () => {
       await expect(masterchef.withdraw(bob.address, amount)).to.be.reverted
     })
 
-    it('withdraw with inefficient chef balance', async () => {
+    it('withdraw with insufficient chef balance', async () => {
       const amount: BigNumber = utils.parseUnits('10', decimals)
       await masterchef.deposit(bob.address, amount)
       const user = await masterchef.users(bob.address)
       expect(user.balance).eq(amount)
-      // burn rdl token of chef balance
-      await rdl.transfer(constants.AddressZero, amount)
       // after burn we check balance of chef and try to withdraw
-      expect(await rdl.balanceOf(masterchef.address)).lt(amount)
-      await expect(masterchef.withdraw(bob.address, amount)).to.be.reverted
+      expect(await rdl.balanceOf(masterchef.address)).lt(amount.mul(2))
+      await expect(masterchef.withdraw(bob.address, amount.mul(2))).to.be
+        .reverted
     })
 
-    it('withdraw with amount in range of balance', async () => {})
+    it('withdraw with one times deposit and amount in range of balance', async () => {
+      const depositAmount: BigNumber = utils.parseUnits('10', decimals)
+      await masterchef.deposit(bob.address, depositAmount)
+
+      const bobRDLBalance = await rdl.balanceOf(bob.address)
+      const withdrawAmount: BigNumber = depositAmount.div(2)
+      await masterchef.withdraw(bob.address, withdrawAmount)
+
+      const user = await masterchef.users(bob.address)
+      // check balance of user
+      expect(user.balance).eq(depositAmount.sub(withdrawAmount))
+      expect(await rdl.balanceOf(bob.address)).eq(
+        bobRDLBalance.add(withdrawAmount)
+      )
+      // check balance of chef
+      expect(await rdl.balanceOf(masterchef.address)).eq(
+        depositAmount.sub(withdrawAmount)
+      )
+    })
+  })
+
+  describe('reward', () => {
+    beforeEach(async () => {
+      await deploy()
+      await rdl.connect(bob).approve(masterchef.address, constants.MaxUint256)
+      await rdl.mint(bob.address, constants.MaxUint256.div(2))
+      await rdl.connect(alice).approve(masterchef.address, constants.MaxUint256)
+      await rdl.mint(alice.address, constants.MaxUint256.div(2))
+    })
+
+    it('one user with sequentially deposit -> claim', async () => {
+      const rdlAmount: BigNumber = utils.parseUnits('10', decimals)
+      const depositTx = await masterchef.deposit(bob.address, rdlAmount)
+      // checking chef rdx balance is still equal to supply
+      expect(await rdx.balanceOf(masterchef.address)).eq(chefMaxRDXSupply)
+      // claim checking
+      const claimTx = await masterchef.claim(bob.address)
+      const reward = rewardPerBlock.mul(
+        claimTx.blockNumber - depositTx.blockNumber
+      )
+      expect(await rdx.balanceOf(bob.address)).eq(reward)
+      expect(await rdx.balanceOf(masterchef.address)).eq(
+        chefMaxRDXSupply.sub(reward)
+      )
+    })
+
+    it('one user with sequentially n deposit -> claim', async () => {
+      const rdlAmount: BigNumber = utils.parseUnits('10', decimals)
+      const n: number = 2
+      const blockNumbers: number[] = []
+      // deposit n times and log first block number
+      for (let i = 0; i < n; i++) {
+        const depositTx = await masterchef.deposit(bob.address, rdlAmount)
+        blockNumbers.push(depositTx.blockNumber)
+      }
+
+      await masterchef.claim(bob.address)
+      let reward = rewardPerBlock.mul(n)
+      expect(await rdx.balanceOf(bob.address)).eq(reward)
+      expect(await rdx.balanceOf(masterchef.address)).eq(
+        chefMaxRDXSupply.sub(reward)
+      )
+    })
+
+    it('multiple users', async () => {
+      const rdlAmount: BigNumber = utils.parseUnits('10', decimals)
+      // move to block 300 and deposit for bob
+      await advanceBlockTo(299)
+      await masterchef.deposit(bob.address, rdlAmount)
+      // move to block 305 and deposit again
+      await advanceBlockTo(304)
+      await masterchef.deposit(bob.address, rdlAmount)
+      // with 5 blocks bob rdx balance will be rewardPerBlock * 5
+      expect(await rdx.balanceOf(bob.address)).eq(rewardPerBlock.mul(5))
+      // move to block 310 and alice deposit
+      await advanceBlockTo(309)
+      await masterchef.deposit(alice.address, rdlAmount)
+      // move to block 315 and bob deposit
+      await advanceBlockTo(314)
+      await masterchef.deposit(bob.address, rdlAmount)
+      // this time bob rdx will equal rewardPerBlock * 10 + rewardPerBlock * 5 * 2/3
+      const bobBalance = rewardPerBlock.mul(10).add(rewardPerBlock.mul(10).div(3)).mul(ACC_PER_SHARE_PRECISION).div(ACC_PER_SHARE_PRECISION)
+      expect(await rdx.balanceOf(bob.address)).eq(bobBalance)
+    })
   })
 })
