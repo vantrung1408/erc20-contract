@@ -6,25 +6,18 @@ import "./RDX.sol";
 contract MasterChef {
     struct User {
         uint256 balance;
-        uint256 startBlock;
+        uint256 lastRewardBlock;
         /**
-        represent amount will using for correct user claim amount each deposit or withdraw
-        Block number    Deposit amount      Reward debit
+        represent amount of RDX user will receive if he/she claim reward
+        Block number    Deposit amount      Acc reward
         1               10                  
         2               20                  (2 - 1) * 20 * rewardPerBlock
         3               30                  (3 - 1) * 30 * rewardPerBlock
         
-        Let give example when we claim at block 5
-        claim amount = ((5 - 1) * 10 + (5 - 2) * 20 + (5 - 3) * 30) * rewardPerBlock
-        -> this way we need store all transactions info -> so expensive
-        
-        let try another way by using rewardCorrection variable and recalculate per deposit/withdraw
-        claim amount = ((5 - 1) * balance (60)) * rewardPerBlock - rewardCorrection
-        for above example sum of rewardCorrection = ((2 - 1) * 20 + (3 - 1) * 30) * rewardPerBlock
-        finally claim amount = ((5 - 1) * balance - rewardCorrection) * rewardPerBlock
-        -> only store rewardCorrection
+        each times user deposit/withdraw/claim, we recalculate accReward
+        basically accReward = (current block - lastRewardBlock) * balance * balance / chefRDLBalance * rewardPerBlock
          */
-        uint256 rewardCorrection;
+        uint256 accReward;
     }
 
     RDL private immutable rdl;
@@ -58,7 +51,7 @@ contract MasterChef {
     return rdx amount will reward for user
      */
     function rewardAmount(address owner) public view returns (uint256 amount) {
-        return calculateReward(owner);
+        return users[owner].accReward;
     }
 
     /**
@@ -79,20 +72,15 @@ contract MasterChef {
         // if balance equal to 0 -> the first deposit
         // we don't need calculate reward debit here -> alway true even user immediately claim
         if (user.balance == 0) {
-            user.rewardCorrection = 0;
+            user.accReward = 0;
             user.balance = amount;
-            user.startBlock = block.number;
+            user.lastRewardBlock = block.number;
             return;
         }
         // log current deposit amount of owner
         user.balance += amount;
-        uint256 rewardCorrectionAtBlock = calculateReward(
-            amount,
-            block.number,
-            user.startBlock,
-            0
-        );
-        user.rewardCorrection += rewardCorrectionAtBlock;
+        user.accReward += _calculateMissingReward(user);
+        user.lastRewardBlock = block.number;
     }
 
     /**
@@ -106,75 +94,65 @@ contract MasterChef {
         // check balance of chef
         uint256 balanceOfChef = rdl.balanceOf(address(this));
         require(balanceOfChef > amount, "Chef balance not enough");
+        // let give some example
+        // when user balance = 100 and accReward = 50 he/her want to withdraw 10
+        // 1. we calculate his/her reward until current block
+        // 2. we calculate reward he/she will receive if he/she withdraw 10
+        // 3. we update his/her balance
+        // 4. transfer RDL to his/her address
+        // 5. transfer RDX reward to his/her address and update current accReward
+        user.accReward += _calculateMissingReward(user);
+        // calculate reward amount for amount will withdraw
+        uint256 reward = (amount / user.balance) * user.accReward;
+        user.balance -= amount;
         // besure we always support user withdraw even when our balance not enough to fully support user withdraw order
         rdl.transfer(owner, amount);
-        // after transfer update current state of user
-        // when user withdraw x amount at block y then at that block if user claim they will receive z reward amount
-        // but z reward amount mean they claim base on all balance
-        // that mean if they withdraw x -> they will receive w = balance / z * x
-        // w will represent on rewardCorrection
-        user.balance -= amount;
-        uint256 currentRewardAmount = calculateReward(owner);
-        uint256 rewardCorrectionAtBlock = (user.balance / currentRewardAmount) *
-            amount;
-        user.rewardCorrection -= rewardCorrectionAtBlock;
+        // finally transfer reward for user
+        _transferReward(owner, reward);
+        // update reward state
+        user.accReward -= reward;
+        user.lastRewardBlock = block.number;
+    }
+
+    /**
+    claim all reward user has
+     */
+    function claim(address owner) public {
+        User storage user = users[owner];
+        // calculate total reward and transfer
+        uint256 reward = user.accReward + _calculateMissingReward(user);
+        _transferReward(owner, reward);
+        // update reward state
+        user.accReward = 0;
+        user.lastRewardBlock = block.number;
     }
 
     /**
     calculate and transfer token RDX to address has request claim
      */
-    function claim(address owner) public {
+    function _transferReward(address owner, uint256 amount) private {
         // check reward amount
-        uint256 amount = calculateReward(owner);
         require(amount > 0, "Amount to claim not valid");
         // check rdx balance of chef
         uint256 rdxBalanceOfChef = rdx.balanceOf(address(this));
         require(rdxBalanceOfChef > amount, "RDX balance of chef not valid");
-
-        User storage user = users[owner];
         // trigger erc20 to transfer rdx to address
         rdx.transfer(owner, amount);
-        // update state
-        user.rewardCorrection = amount;
     }
 
     /**
     simulate and calculate reward amount when user claim at block x
      */
-    function calculateReward(address owner)
+    function _calculateMissingReward(User storage user)
         private
         view
         returns (uint256 amount)
     {
-        User storage user = users[owner];
-        if (user.balance == 0 || user.startBlock > block.number) {
+        if (user.balance == 0 || user.lastRewardBlock > block.number) {
             return 0;
         }
-        return
-            calculateReward(
-                user.balance,
-                block.number,
-                user.startBlock,
-                user.rewardCorrection
-            );
-    }
-
-    /**
-    calculate reward between two block numbers
-     */
-    function calculateReward(
-        uint256 balance,
-        uint256 blockNumber,
-        uint256 startBlockNumber,
-        uint256 correction
-    ) private view returns (uint256 amount) {
-        uint256 chefRDL = rdl.balanceOf(address(this));
-        uint256 ratio = balance / chefRDL;
-        return
-            ratio *
-            (blockNumber - startBlockNumber) *
-            balance *
-            rewardPerBlock -
-            correction;
+        uint256 chefBalance = rdl.balanceOf(address(this));
+        uint256 ratio = user.balance / chefBalance;
+        return (block.number - user.lastRewardBlock) * user.balance * ratio * rewardPerBlock;
     }
 }
