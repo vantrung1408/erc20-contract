@@ -8,9 +8,8 @@ contract MasterChef {
         uint256 rewardDebt;
     }
 
-    address private creator;
-    IERC20 private immutable rdl;
-    IERC20 private immutable rdx;
+    IERC20 public immutable rdl;
+    IERC20 public immutable rdx;
     uint256 public immutable rewardPerBlock;
     uint256 public constant ACC_PER_SHARE_PRECISION = 1e12;
     uint256 private accRDXPerShare;
@@ -25,7 +24,6 @@ contract MasterChef {
         rdl = IERC20(_rdlAddress);
         rdx = IERC20(_rdxAddress);
         rewardPerBlock = _rewardPerBlock;
-        creator = msg.sender;
     }
 
     /**
@@ -101,16 +99,6 @@ contract MasterChef {
         if (reward > 0) {
             _transferReward(msg.sender, reward);
         }
-    }
-
-    /**
-    using to transfer all pool balance of RDX to creator
-    emergency call, only creator can trigger
-     */
-    function withdrawPoolBalance() public {
-        require(msg.sender == creator, "Only creator can trigger");
-        rdx.transfer(creator, rdx.balanceOf(address(this)));
-        rdl.transfer(creator, rdl.balanceOf(address(this)));
     }
 
     /**
