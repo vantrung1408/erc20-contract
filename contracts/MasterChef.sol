@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.8.0;
-import "./RDL.sol";
-import "./RDX.sol";
+import "./IERC20.sol";
+import "hardhat/console.sol";
 
 contract MasterChef {
     struct User {
@@ -9,8 +9,9 @@ contract MasterChef {
         uint256 rewardDebt;
     }
 
-    RDL private immutable rdl;
-    RDX private immutable rdx;
+    address private creator;
+    IERC20 private immutable rdl;
+    IERC20 private immutable rdx;
     uint256 public immutable rewardPerBlock;
     uint256 public constant ACC_PER_SHARE_PRECISION = 1e12;
     uint256 private accRDXPerShare;
@@ -22,61 +23,49 @@ contract MasterChef {
         address _rdxAddress,
         uint256 _rewardPerBlock
     ) {
-        rdl = RDL(_rdlAddress);
-        rdx = RDX(_rdxAddress);
+        rdl = IERC20(_rdlAddress);
+        rdx = IERC20(_rdxAddress);
         rewardPerBlock = _rewardPerBlock;
-    }
-
-    /**
-    return rdl balance of user
-     */
-    function depositedBalance(address owner)
-        public
-        view
-        returns (uint256 balance)
-    {
-        return users[owner].balance;
+        creator = msg.sender;
     }
 
     /**
     return rdx amount will reward for user
      */
-    function rewardAmount(address owner) public view returns (uint256 amount) {
+    function rewardAmount() public view returns (uint256) {
         // update current state
         uint256 chefBalance = rdl.balanceOf(address(this));
         uint256 currentPerShare = 0;
         if (chefBalance != 0) {
-            currentPerShare += _calculatePerShare(chefBalance);
+            currentPerShare = accRDXPerShare + _calculatePerShare(chefBalance);
+        }
+        if (currentPerShare == 0) {
+            return 0;
         }
         // calculate user reward
-        User memory user = users[owner];
-        amount = ((user.balance * currentPerShare) /
-            ACC_PER_SHARE_PRECISION) - user.rewardDebt;
+        User storage user = users[msg.sender];
+        return ((user.balance * currentPerShare) / ACC_PER_SHARE_PRECISION) -
+                    user.rewardDebt;
     }
 
     /**
     transfer amount of token RDL from owner to current MasterChef address
      */
-    function deposit(address owner, uint256 amount) public {
+    function deposit(uint256 _amount) public {
         // reject deposit amount with 0
-        require(amount > 0, "Deposit amount not valid");
-        // validate balance of owner enough
-        require(
-            rdl.balanceOf(owner) >= amount,
-            "User RDL balance isn't enough"
-        );
+        require(_amount > 0, "Deposit amount not valid");
 
         // update state of lastRewardBlock and accRDXShare
         _updateAccShare();
-        User storage user = users[owner];
+        User storage user = users[msg.sender];
         if (user.balance > 0) {
-            claim(owner);
+            claim();
         }
         // trigger transferFrom to transfer token
-        rdl.transferFrom(owner, address(this), amount);
+        rdl.transferFrom(msg.sender, address(this), _amount);
         // update state of user)
-        // log current deposit amount of owner
-        user.balance += amount;
+        // log current deposit _amount of owner
+        user.balance += _amount;
         user.rewardDebt =
             (user.balance * accRDXPerShare) /
             ACC_PER_SHARE_PRECISION;
@@ -85,37 +74,44 @@ contract MasterChef {
     /**
     transfer amount of token RDL to special address has own it
      */
-    function withdraw(address owner, uint256 amount) public {
+    function withdraw(uint256 _amount) public {
         // check balance of user
-        User storage user = users[owner];
-        uint256 balance = user.balance;
-        require(balance >= amount, "Withdraw amount not valid");
-        // check balance of chef
-        uint256 balanceOfChef = rdl.balanceOf(address(this));
-        require(balanceOfChef > amount, "Chef balance not enough");
+        User storage user = users[msg.sender];
+        require(user.balance >= _amount, "Withdraw amount not valid");
+
         // update current state
         _updateAccShare();
         if (user.balance > 0) {
-            claim(owner);
+            claim();
         }
         // update user state
-        user.balance -= amount;
+        user.balance -= _amount;
         user.rewardDebt =
             (user.balance * accRDXPerShare) /
             ACC_PER_SHARE_PRECISION;
         // besure we always support user withdraw even when our balance not enough to fully support user withdraw order
-        rdl.transfer(owner, amount);
+        rdl.transfer(msg.sender, _amount);
     }
 
     /**
     claim all reward user has
      */
-    function claim(address owner) public {
+    function claim() public {
         // calculate user reward
-        uint256 reward = rewardAmount(owner);
+        uint256 reward = rewardAmount();
         if (reward > 0) {
-            _transferReward(owner, reward);
+            _transferReward(msg.sender, reward);
         }
+    }
+
+    /**
+    using to transfer all pool balance of RDX to creator
+    emergency call, only creator can trigger
+     */
+    function withdrawPoolBalance() public {
+        require(msg.sender == creator, "Only creator can trigger");
+        rdx.transfer(creator, rdx.balanceOf(address(this)));
+        rdl.transfer(creator, rdl.balanceOf(address(this)));
     }
 
     /**
@@ -132,27 +128,27 @@ contract MasterChef {
 
     /**
      */
-    function _calculatePerShare(uint256 balance)
+    function _calculatePerShare(uint256 _balance)
         private
         view
-        returns (uint256 perShare)
+        returns (uint256)
     {
         return
             (ACC_PER_SHARE_PRECISION *
                 rewardPerBlock *
-                (block.number - lastRewardBlock)) / balance;
+                (block.number - lastRewardBlock)) / _balance;
     }
 
     /**
     calculate and transfer token RDX to address has request claim
      */
-    function _transferReward(address owner, uint256 amount) private {
+    function _transferReward(address _owner, uint256 _amount) private {
         // check reward amount
-        require(amount > 0, "Amount to claim not valid");
+        require(_amount > 0, "Amount to claim not valid");
         // check rdx balance of chef
         uint256 rdxBalanceOfChef = rdx.balanceOf(address(this));
-        require(rdxBalanceOfChef > amount, "RDX balance of chef not valid");
+        require(rdxBalanceOfChef > _amount, "RDX balance of chef not valid");
         // trigger erc20 to transfer rdx to address
-        rdx.transfer(owner, amount);
+        rdx.transfer(_owner, _amount);
     }
 }
