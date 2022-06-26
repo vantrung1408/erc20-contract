@@ -94,6 +94,7 @@ contract MasterChef {
     claim all reward user has
      */
     function claim() public {
+        _updateAccShare();
         // calculate user reward
         uint256 reward = rewardAmount();
         if (reward > 0) {
