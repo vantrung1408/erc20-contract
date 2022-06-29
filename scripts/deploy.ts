@@ -38,9 +38,9 @@ async function main() {
     const contract = await contractFactory.deploy.apply(contractFactory, params)
     await contract.deployed()
     console.log(
-      `${name} deployed to: ${
+      `npx hardhat verify --contract contracts/${name}.sol:${name} --network kovan ${
         contract.address
-      } with constructor params: ${params.join(' ')}`
+      } ${params.join(' ')}`
     )
   }
 }
