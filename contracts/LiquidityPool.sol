@@ -2,7 +2,6 @@
 pragma solidity >=0.8.0;
 import "./IERC20.sol";
 import "./ERC20.sol";
-import "hardhat/console.sol";
 
 contract LiquidityPool is ERC20 {
     // store liquidity provider
