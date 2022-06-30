@@ -10,7 +10,7 @@ describe('liquidity pool', () => {
     usdc: ERC20Mintable,
     liquidityPool: LiquidityPool,
     owner: SignerWithAddress,
-    bob: SignerWithAddress,
+    bob: SignerWithAddress
 
   // let assumption we always start with 1weth = 500usdc
   const decimals = 18
@@ -34,6 +34,12 @@ describe('liquidity pool', () => {
     await weth.approve(liquidityPool.address, constants.MaxUint256)
     await usdc.approve(liquidityPool.address, constants.MaxUint256)
     ;[owner, bob] = await ethers.getSigners()
+
+    weth.approve(liquidityPool.address, constants.MaxUint256)
+    usdc.approve(liquidityPool.address, constants.MaxUint256)
+
+    weth.connect(bob).approve(liquidityPool.address, constants.MaxUint256)
+    usdc.connect(bob).approve(liquidityPool.address, constants.MaxUint256)
   }
 
   beforeEach(deploy)
@@ -54,6 +60,9 @@ describe('liquidity pool', () => {
   })
 
   it('add liquidity 2 times', async () => {
+    await weth.transfer(bob.address, 20)
+    await usdc.transfer(bob.address, 20)
+
     await liquidityPool.add(10, 10)
     await liquidityPool.connect(bob).add(20, 20)
     expect(await liquidityPool.amountA()).eq(30)
@@ -64,32 +73,39 @@ describe('liquidity pool', () => {
   it('get swap info', async () => {
     await liquidityPool.add(10, 20)
     let info = await liquidityPool.getSwapInfo(weth.address, usdc.address, 5)
-    // amount out = (10 * 20) / (10 - 5) = 40
-    expect(info.outputAmount).eq(40)
+    // amount out = 20 - (10 * 20) / (10 + 5) = 6
+    expect(info.outputAmount).eq(6)
     await liquidityPool.add(20, 40)
     info = await liquidityPool.getSwapInfo(usdc.address, weth.address, 10)
-    // amount out = (30 * 60) / (60 - 10) = 36
-    expect(info.outputAmount).eq(36)
+    // amount out = 30 - (30 * 60) / (60 + 10) = 4
+    expect(info.outputAmount).eq(4)
   })
 
   it('swap', async () => {
-    await weth.connect(bob).mint(10)
-    await usdc.connect(bob).mint(10)
+    await weth.transfer(bob.address, 10)
+    await usdc.transfer(bob.address, 10)
 
     await liquidityPool.add(10, 10)
+    // swap with large amount
+    await expect(
+      liquidityPool.connect(bob).swap(weth.address, usdc.address, 20, 0)
+    )
+    // swap with in range amount
     await liquidityPool.connect(bob).swap(weth.address, usdc.address, 5, 0)
-    // bob weth balance -= 5, usdc balance += (10 * 10) / (10 - 5) = 20
+    // bob weth balance -= 5, usdc balance += 10 - (10 * 10) / (10 + 5) = 3
     expect(await weth.balanceOf(liquidityPool.address)).eq(15)
     expect(await weth.balanceOf(bob.address)).eq(5)
-    expect(await usdc.balanceOf(bob.address)).eq(20)
+    expect(await usdc.balanceOf(bob.address)).eq(13)
     expect(await liquidityPool.constantValue()).eq(100)
     // outputAmount = (5 * 20) / (5 - 3) = 50
-    await expect(liquidityPool.connect(bob).swap(weth.address, usdc.address, 3, 51)).to.be.reverted
+    await expect(
+      liquidityPool.connect(bob).swap(weth.address, usdc.address, 3, 51)
+    ).to.be.reverted
   })
 
   it('remove liquidity', async () => {
-    await weth.connect(bob).mint(10)
-    await usdc.connect(bob).mint(10)
+    await weth.transfer(bob.address, 10)
+    await usdc.transfer(bob.address, 10)
 
     await liquidityPool.connect(bob).add(10, 10)
     await liquidityPool.connect(bob).remove(5, 5)
@@ -101,5 +117,11 @@ describe('liquidity pool', () => {
     expect(await usdc.balanceOf(bob.address)).eq(5)
 
     expect(await liquidityPool.constantValue()).eq(25)
+
+    // remove with not valid amount 
+    await liquidityPool.add(5, 5)
+    // pool has 10 weth 10 usdc
+    await expect(liquidityPool.connect(bob).remove(10, 10)).to.be.reverted
+    await expect(liquidityPool.remove(11, 11)).to.be.reverted
   })
 })
