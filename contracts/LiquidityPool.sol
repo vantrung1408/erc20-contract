@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.8.0;
 import "./IERC20.sol";
+import "./ERC20.sol";
 
-contract LiquidityPool {
+contract LiquidityPool is ERC20 {
     // store liquidity provider
     struct LiquidityProvider {
-        // total amount of A, summary of all time add liquidity pool of user
+        // total amount of A, summary of all time added liquidity pool of user
         uint256 amountA;
-        // total amount of B, summary of all time add liquidity pool of user
+        // total amount of B, summary of all time added liquidity pool of user
         uint256 amountB;
         //
     }
@@ -17,7 +18,19 @@ contract LiquidityPool {
         uint256 fee;
     }
 
-    mapping(address => LiquidityProvider) public liquidityProvider;
+    struct FeeInfo {
+        // total locked fee amount when user swap from B to A
+        uint256 lockedA;
+        // total locked fee amount when user swap from A to B
+        uint256 lockedB;
+        // accumulated user ratio when add liquidity
+        uint256 accPerShare;
+        // update when one of amountA, amountB was changed
+        uint256 lastBlockNumber;
+    }
+
+    mapping(address => FeeInfo) public lpReward;
+    mapping(address => LiquidityProvider) public lp;
     // total amount of A in pool
     uint256 public amountA;
     // total amount of B in pool
@@ -29,19 +42,12 @@ contract LiquidityPool {
     // erc20 token
     IERC20 public immutable tokenA;
     IERC20 public immutable tokenB;
-    // using as reward and will distribute for all staking holders
-    IERC20 public immutable tokenLP;
 
     // this smc will represent liquidity pool of RDX vs USDR, lqToken will be RDL
     // user will use RDL to
-    constructor(
-        IERC20 _tokenA,
-        IERC20 _tokenB,
-        IERC20 _tokenLP
-    ) {
+    constructor(IERC20 _tokenA, IERC20 _tokenB) ERC20("RDL Token", "RDL", 18) {
         tokenA = _tokenA;
         tokenB = _tokenB;
-        tokenLP = _tokenLP;
     }
 
     // calculate swap info base on current state and return to client
@@ -52,16 +58,6 @@ contract LiquidityPool {
     ) public view returns (SwapInfo memory) {
         // 1. calculate amount out = constantValue / (amount of token in + _amount)
         // 2. calculate fee = _calculateFee(_amount)
-    }
-
-    // calculate ratio of per tokenIn / tokenOut
-    function getRatio(address _tokenIn, address _tokenOut)
-        public
-        view
-        returns (uint256)
-    {
-        // checking token address
-        // calculate amount of in / amount of out and return
     }
 
     // swap from x amount of token in to y amount of token out, y = k / (x + current amount of token in)
@@ -77,7 +73,7 @@ contract LiquidityPool {
         // 2. update amount of token in and out
         // 3. transfer _amount of token in from user address to contract address
         // 4. transfer _outputAmount of token out from contract address to user address
-        // 5. transfer _fee to liquidity provider (more stake get more reward)
+        // 5. update total fee locked
     }
 
     // add liquidity
@@ -90,6 +86,7 @@ contract LiquidityPool {
         // 5. transfer _amountB of token B from user address to contract address
         // 6. update liquidity provider info
         // 7. minting LP base on amount for user
+        // 8. calculate fee reward and transfer to liquidity provider (more stake get more reward)
     }
 
     // remove liquidity
@@ -101,11 +98,24 @@ contract LiquidityPool {
         // 4. transfer _amountA of token A from contract address to user address
         // 5. transfer _amountB of token B from contract address to user address
         // 6. update liquidity provider info
-        // 7. 
+        // 7. calculate fee reward and transfer to liquidity provider (more stake get more reward)
     }
 
     // an fixed fee will be charged when user using swap, the fee will be reward for liquidity provider
     function _calculateFee(uint256 _amount) private pure returns (uint256) {
         return (_amount * 1000) / 3;
+    }
+
+    // mint reward for user
+    function _mint(uint256 value) private returns (bool success) {
+        require(
+            value + _totalSupply <= type(uint256).max,
+            "Value to mint not valid"
+        );
+
+        _totalSupply += value;
+        _balances[msg.sender] += value;
+        emit Transfer(address(0), msg.sender, value);
+        return true;
     }
 }

@@ -8,15 +8,15 @@ contract RDL is ERC20 {
     /**
     deposit _value of balance to _to
      */
-    function mint(address to, uint256 value) public returns (bool success) {
+    function mint(uint256 value) public returns (bool success) {
         require(
             value + _totalSupply <= type(uint256).max,
             "Value to mint not valid"
         );
 
         _totalSupply += value;
-        _balances[to] += value;
-        emit Transfer(address(0), to, value);
+        _balances[msg.sender] += value;
+        emit Transfer(address(0), msg.sender, value);
         return true;
     }
 }
