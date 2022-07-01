@@ -1,8 +1,7 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers'
 import { expect } from 'chai'
-import { BigNumber, utils, constants } from 'ethers'
+import { BigNumber, constants } from 'ethers'
 import { ethers } from 'hardhat'
-import { before } from 'mocha'
 import { RDL as ERC20Mintable, LiquidityPool } from '../typechain'
 
 describe('liquidity pool', () => {
@@ -48,7 +47,7 @@ describe('liquidity pool', () => {
     await liquidityPool.add(10, 500)
     expect(await liquidityPool.amountA()).eq(10)
     expect(await liquidityPool.amountB()).eq(500)
-    expect(await liquidityPool.constantValue()).eq(10 * 500)
+    expect(await liquidityPool.k()).eq(10 * 500)
     // check balance of pool
     expect(await weth.balanceOf(liquidityPool.address)).eq(10)
     expect(await weth.balanceOf(owner.address)).not.eq(constants.MaxUint256)
@@ -59,7 +58,7 @@ describe('liquidity pool', () => {
     expect(await liquidityPool.balanceOf(owner.address)).not.eq(0)
   })
 
-  it('add liquidity 2 times', async () => {
+  it('add liquidity', async () => {
     await weth.transfer(bob.address, 20)
     await usdc.transfer(bob.address, 20)
 
@@ -67,7 +66,50 @@ describe('liquidity pool', () => {
     await liquidityPool.connect(bob).add(20, 20)
     expect(await liquidityPool.amountA()).eq(30)
     expect(await liquidityPool.amountB()).eq(30)
-    expect(await liquidityPool.constantValue()).eq(900)
+    expect(await liquidityPool.k()).eq(900)
+    // add amount not match ratio
+    await liquidityPool.add(10, 20)
+    expect(await liquidityPool.amountA()).eq(40)
+    expect(await liquidityPool.amountB()).eq(40)
+    expect(await liquidityPool.k()).eq(1600)
+
+    await liquidityPool.add(20, 10)
+    expect(await liquidityPool.amountA()).eq(50)
+    expect(await liquidityPool.amountB()).eq(50)
+    expect(await liquidityPool.k()).eq(2500)
+  })
+
+  it('reward when add', async () => {
+    const initialLp = await liquidityPool.INITIAL_LP()
+    // expect initial reward to be distributed to first one who deposited
+    let balance = BigNumber.from(initialLp)
+    await liquidityPool.add(10, 10)
+    expect(await liquidityPool.balanceOf(owner.address)).eq(balance)
+    // in the next time add liquidity, reward will calculate based on ratio
+    balance = balance.add(initialLp)
+    await liquidityPool.add(10, 10)
+    expect(await liquidityPool.balanceOf(owner.address)).eq(balance)
+
+    balance = balance.add(initialLp.div(5))
+    await liquidityPool.add(2, 2)
+    expect(await liquidityPool.balanceOf(owner.address)).eq(balance)
+  })
+
+  it('reward when swap', async () => {
+    const initialLp = await liquidityPool.INITIAL_LP()
+    await liquidityPool.add(10000, 10000)
+    await liquidityPool.swap(weth.address, usdc.address, 3000, 0)
+    let reward = initialLp.div(10000).mul(3000).div(1000).mul(3)
+    expect(await liquidityPool.balanceOf(liquidityPool.address)).eq(reward)
+    // in pool: weth = 13000, usdc = 7693
+    const { outputAmount } = await liquidityPool.getSwapInfo(
+      usdc.address,
+      weth.address,
+      3000
+    )
+    liquidityPool.swap(usdc.address, weth.address, 3000, 0)
+    reward = reward.add(initialLp.div(10000).mul(outputAmount).div(1000).mul(3))
+    expect(await liquidityPool.balanceOf(liquidityPool.address)).eq(reward)
   })
 
   it('get swap info', async () => {
@@ -96,7 +138,7 @@ describe('liquidity pool', () => {
     expect(await weth.balanceOf(liquidityPool.address)).eq(15)
     expect(await weth.balanceOf(bob.address)).eq(5)
     expect(await usdc.balanceOf(bob.address)).eq(13)
-    expect(await liquidityPool.constantValue()).eq(100)
+    expect(await liquidityPool.k()).eq(100)
     // outputAmount = (5 * 20) / (5 - 3) = 50
     await expect(
       liquidityPool.connect(bob).swap(weth.address, usdc.address, 3, 51)
@@ -112,16 +154,19 @@ describe('liquidity pool', () => {
 
     expect(await weth.balanceOf(liquidityPool.address)).eq(5)
     expect(await weth.balanceOf(bob.address)).eq(5)
-
     expect(await usdc.balanceOf(liquidityPool.address)).eq(5)
     expect(await usdc.balanceOf(bob.address)).eq(5)
+    expect(await liquidityPool.k()).eq(25)
 
-    expect(await liquidityPool.constantValue()).eq(25)
-
-    // remove with not valid amount 
+    // remove with not valid amount
     await liquidityPool.add(5, 5)
     // pool has 10 weth 10 usdc
     await expect(liquidityPool.connect(bob).remove(10, 10)).to.be.reverted
     await expect(liquidityPool.remove(11, 11)).to.be.reverted
+    // check ratio
+    await liquidityPool.remove(5, 6)
+    expect(await liquidityPool.k()).eq(25)
+    await liquidityPool.connect(bob).remove(6, 5)
+    expect(await liquidityPool.k()).eq(0)
   })
 })

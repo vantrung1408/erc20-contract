@@ -2,46 +2,26 @@
 pragma solidity >=0.8.0;
 import "./IERC20.sol";
 import "./ERC20.sol";
+import "hardhat/console.sol";
 
 contract LiquidityPool is ERC20 {
-    // store liquidity provider
-    struct LiquidityProvider {
-        // total amount of A, summary of all time added liquidity pool of user
-        uint256 amountA;
-        // total amount of B, summary of all time added liquidity pool of user
-        uint256 amountB;
-        //
-    }
     // presenting swap info for user view
     struct SwapInfo {
         uint256 outputAmount;
         uint256 fee;
     }
 
-    // [TODO] implement fee reward
-    // struct FeeInfo {
-    //     // total locked fee amount when user swap from B to A
-    //     uint256 lockedA;
-    //     // total locked fee amount when user swap from A to B
-    //     uint256 lockedB;
-    //     // accumulated user ratio when add liquidity
-    //     uint256 accPerShare;
-    //     // update when one of amountA, amountB was changed
-    //     uint256 lastBlockNumber;
-    // }
-
-    // mapping(address => FeeInfo) public lpReward;
-    mapping(address => LiquidityProvider) public lp;
     // total amount of A in pool
     uint256 public amountA;
     // total amount of B in pool
     uint256 public amountB;
     // constant value = amountA * amountB, will not change when swap and change when add, remove liquidity
-    uint256 public constantValue;
+    uint256 public k;
     //
     uint256 public constant PRECISION = 1e12;
     // let assumption each tokenA added user will receive 10 token lp
-    uint256 public constant REWARD_PER_TOKEN_A = 10;
+    uint256 public constant INITIAL_LP = 1e18;
+    uint256 public REWARD_PER_TOKEN_A = 0;
     // erc20 token
     IERC20 public immutable tokenA;
     IERC20 public immutable tokenB;
@@ -64,13 +44,12 @@ contract LiquidityPool is ERC20 {
         validateTokenAddress(_tokenIn, _tokenOut)
         returns (SwapInfo memory)
     {
-        // 1. calculate amount out = amount of token out - constantValue / (amount of token in - _amount)
+        // 1. calculate amount out = amount of token out - k / (amount of token in - _amount)
         uint256 totalBefore = _getAmountOfTokenByAddress(_tokenOut) * PRECISION;
-        uint256 totalAfter = (constantValue * PRECISION) /
+        uint256 totalAfter = (k * PRECISION) /
             (_getAmountOfTokenByAddress(_tokenIn) + _amount);
         uint256 amountOut = totalBefore - totalAfter;
         // 2. calculate fee = _calculateFee(_amount)
-        // [TODO] implement fee reward
         uint256 fee = 0;
         return SwapInfo(amountOut / PRECISION, fee);
     }
@@ -93,94 +72,90 @@ contract LiquidityPool is ERC20 {
         // 4. update amount of token in and out
         // 5. transfer _amount of token in from user address to contract address
         // 6. transfer _outputAmount of token out from contract address to user address
+        // 7. calculate fee and mint that fee as lp amount for pool
         if (_tokenIn == address(tokenA)) {
             amountA += _amount;
             tokenA.transferFrom(msg.sender, address(this), _amount);
 
             amountB -= info.outputAmount;
             tokenB.transfer(msg.sender, info.outputAmount);
+
+            uint256 fee = _calculateLPAmount(_amount);
+            _mint(address(this), (fee / 1000) * 3);
         } else {
             amountA -= info.outputAmount;
             tokenA.transfer(msg.sender, info.outputAmount);
 
             amountB += _amount;
             tokenB.transferFrom(msg.sender, address(this), _amount);
+
+            uint256 fee = _calculateLPAmount(info.outputAmount);
+            _mint(address(this), (fee / 1000) * 3);
         }
-        // 7. update total fee locked
     }
 
     // add liquidity
-    function add(uint256 _amountA, uint256 _amountB)
-        public
-        validateRatio(_amountA, _amountB)
-    {
+    function add(uint256 _amountA, uint256 _amountB) public {
         // add liquidity process
-        // 1. validate ratio of _amountA / _amountB
-        // 2. update amount of token A, B
+        // 1. get correction amount
+        (_amountA, _amountB) = _prepareAmount(_amountA, _amountB);
+        // 2. transfer _amountA of token A from user address to contract address
+        tokenA.transferFrom(msg.sender, address(this), _amountA);
+        // 3. transfer _amountB of token B from user address to contract address
+        tokenB.transferFrom(msg.sender, address(this), _amountB);
+        // 4. minting LP base on amount for user
+        if (k == 0) {
+            _mint(msg.sender, INITIAL_LP);
+            REWARD_PER_TOKEN_A = (INITIAL_LP * PRECISION) / _amountA;
+        } else {
+            uint256 reward = _calculateLPAmount(_amountA);
+            _mint(msg.sender, reward);
+        }
+        // 5. update amount of token A, B
         amountA += _amountA;
         amountB += _amountB;
-        // 3. update k = new amount of A * new amount of B
-        constantValue = amountA * amountB;
-        // 4. transfer _amountA of token A from user address to contract address
-        tokenA.transferFrom(msg.sender, address(this), _amountA);
-        // 5. transfer _amountB of token B from user address to contract address
-        tokenB.transferFrom(msg.sender, address(this), _amountB);
-        // 6. update liquidity provider info
-        lp[msg.sender].amountA += _amountA;
-        lp[msg.sender].amountB += _amountB;
-        // 7. minting LP base on amount for user
-        _mint(_amountA * REWARD_PER_TOKEN_A);
-        // 8. calculate fee reward and transfer to liquidity provider (more stake get more reward)
+        // 6. update k = new amount of A * new amount of B
+        k = amountA * amountB;
     }
 
     // remove liquidity
-    function remove(uint256 _amountA, uint256 _amountB)
-        public
-        validateRatio(_amountA, _amountB)
-    {
-        LiquidityProvider storage user = lp[msg.sender];
+    function remove(uint256 _amountA, uint256 _amountB) public {
         // remove liquidity process
-        // 1. validate ratio of _amountA / _amountB
+        // 1. get correction amount
+        (_amountA, _amountB) = _prepareAmount(_amountA, _amountB);
         // 2. validate pool balance, liquidity provider balance with _amountA, _amountB
         require(
             amountA >= _amountA && amountB >= _amountB,
             "withdraw amount not valid with pool balance"
         );
+        (uint256 depositedA, uint256 depositedB) = _getUserDepositedAmount();
         require(
-            user.amountA >= _amountA && user.amountB >= _amountB,
+            depositedA >= _amountA && depositedB >= _amountB,
             "withdraw amount not valid with user balance"
         );
         // 3. update amount of token A, B
         amountA -= _amountA;
         amountB -= _amountB;
         // 4. update k = new amount of A * new amount of B
-        constantValue = amountA * amountB;
+        k = amountA * amountB;
         // 5. transfer _amountA of token A from contract address to user address
         tokenA.transfer(msg.sender, _amountA);
         // 6. transfer _amountB of token B from contract address to user address
         tokenB.transfer(msg.sender, _amountB);
-        // 7. update liquidity provider info
-        user.amountA -= _amountA;
-        user.amountB -= _amountB;
-        // 8. calculate fee reward and transfer to liquidity provider (more stake get more reward)
+        // 7. burn lp token of user
+        transfer(address(0), _calculateLPAmount(_amountA));
     }
 
-    // [TODO] implement fee reward
-    // an fixed fee will be charged when user using swap, the fee will be reward for liquidity provider
-    // function _calculateFee(uint256 _amount) private pure returns (uint256) {
-    //     return (_amount * 1000) / 3;
-    // }
-
     // mint reward for user
-    function _mint(uint256 value) private {
+    function _mint(address to, uint256 value) private {
         require(
             value + _totalSupply <= type(uint256).max,
             "Value to mint not valid"
         );
 
         _totalSupply += value;
-        _balances[msg.sender] += value;
-        emit Transfer(address(0), msg.sender, value);
+        _balances[to] += value;
+        emit Transfer(address(0), to, value);
     }
 
     // input token address and check that address is tokenA or tokenB and return value coresponding to the address
@@ -195,6 +170,42 @@ contract LiquidityPool is ERC20 {
         return amountB;
     }
 
+    // amount correction
+    function _prepareAmount(uint256 _amountA, uint256 _amountB)
+        private
+        view
+        returns (uint256, uint256)
+    {
+        if (k == 0) {
+            return (_amountA, _amountB);
+        }
+        // when amountA and amountB match current ratio
+        uint256 ratio = (amountA * PRECISION) / amountB;
+        uint256 neededB = (_amountA * PRECISION) / ratio;
+        if (neededB <= _amountB) {
+            return (_amountA, neededB);
+        }
+        // amountB not enough to cover amountA -> calculate needed amountA base on amountB
+        uint256 neededA = (_amountB * ratio) / PRECISION;
+        return (neededA, _amountB);
+    }
+
+    //
+    function _getUserDepositedAmount() private view returns (uint256, uint256) {
+        uint256 currentLp = balanceOf(msg.sender);
+        uint256 depositedA = (currentLp * PRECISION) / REWARD_PER_TOKEN_A;
+        return _prepareAmount(depositedA, amountB);
+    }
+
+    //
+    function _calculateLPAmount(uint256 _amountA)
+        private
+        view
+        returns (uint256)
+    {
+        return (_amountA * REWARD_PER_TOKEN_A) / PRECISION;
+    }
+
     // ensure _tokenIn is one of tokenA or tokenB and _tokenOut is tokenB when _tokenIn is tokenA and tokenA when _tokenIn is tokenB
     modifier validateTokenAddress(address _tokenIn, address _tokenOut) {
         require(_tokenIn != _tokenOut, "pair issue");
@@ -206,16 +217,6 @@ contract LiquidityPool is ERC20 {
             _tokenOut == address(tokenA) || _tokenOut == address(tokenB),
             "tokenOut address not match"
         );
-        _;
-    }
-
-    // validate input amountA and input amountB ratio between them equal to current ratio of amountA / amountB
-    modifier validateRatio(uint256 _amountA, uint256 _amountB) {
-        if (constantValue != 0) {
-            uint256 ratio = (amountA * PRECISION) / amountB;
-            uint256 neededB = (_amountA * PRECISION) / ratio;
-            require(neededB == _amountB, "ratio issue");
-        }
         _;
     }
 }
