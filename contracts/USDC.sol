@@ -2,8 +2,8 @@
 pragma solidity >=0.8.0;
 import "./ERC20.sol";
 
-contract RDL is ERC20 {
-    constructor(uint8 tokenDecimals) ERC20("RDL token", "RDL", tokenDecimals) {}
+contract USDC is ERC20 {
+    constructor(uint8 tokenDecimals) ERC20("USDC token", "USDC", tokenDecimals) {}
 
     /**
     deposit _value of balance to _to

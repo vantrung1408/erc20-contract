@@ -54,6 +54,26 @@ contract LiquidityPool is ERC20 {
         return SwapInfo(amountOut / PRECISION, fee);
     }
 
+    // amount correction
+    function prepareAmount(uint256 _amountA, uint256 _amountB)
+        public
+        view
+        returns (uint256, uint256)
+    {
+        if (k == 0) {
+            return (_amountA, _amountB);
+        }
+        // when amountA and amountB match current ratio
+        uint256 ratio = (amountA * PRECISION) / amountB;
+        uint256 neededB = (_amountA * PRECISION) / ratio;
+        if (neededB <= _amountB) {
+            return (_amountA, neededB);
+        }
+        // amountB not enough to cover amountA -> calculate needed amountA base on amountB
+        uint256 neededA = (_amountB * ratio) / PRECISION;
+        return (neededA, _amountB);
+    }
+
     // swap from x amount of token in to y amount of token out, y = k / (x + current amount of token in)
     function swap(
         address _tokenIn,
@@ -98,7 +118,7 @@ contract LiquidityPool is ERC20 {
     function add(uint256 _amountA, uint256 _amountB) public {
         // add liquidity process
         // 1. get correction amount
-        (_amountA, _amountB) = _prepareAmount(_amountA, _amountB);
+        (_amountA, _amountB) = prepareAmount(_amountA, _amountB);
         // 2. transfer _amountA of token A from user address to contract address
         tokenA.transferFrom(msg.sender, address(this), _amountA);
         // 3. transfer _amountB of token B from user address to contract address
@@ -122,7 +142,7 @@ contract LiquidityPool is ERC20 {
     function remove(uint256 _amountA, uint256 _amountB) public {
         // remove liquidity process
         // 1. get correction amount
-        (_amountA, _amountB) = _prepareAmount(_amountA, _amountB);
+        (_amountA, _amountB) = prepareAmount(_amountA, _amountB);
         // 2. validate pool balance, liquidity provider balance with _amountA, _amountB
         require(
             amountA >= _amountA && amountB >= _amountB,
@@ -170,31 +190,11 @@ contract LiquidityPool is ERC20 {
         return amountB;
     }
 
-    // amount correction
-    function _prepareAmount(uint256 _amountA, uint256 _amountB)
-        private
-        view
-        returns (uint256, uint256)
-    {
-        if (k == 0) {
-            return (_amountA, _amountB);
-        }
-        // when amountA and amountB match current ratio
-        uint256 ratio = (amountA * PRECISION) / amountB;
-        uint256 neededB = (_amountA * PRECISION) / ratio;
-        if (neededB <= _amountB) {
-            return (_amountA, neededB);
-        }
-        // amountB not enough to cover amountA -> calculate needed amountA base on amountB
-        uint256 neededA = (_amountB * ratio) / PRECISION;
-        return (neededA, _amountB);
-    }
-
     //
     function _getUserDepositedAmount() private view returns (uint256, uint256) {
         uint256 currentLp = balanceOf(msg.sender);
         uint256 depositedA = (currentLp * PRECISION) / REWARD_PER_TOKEN_A;
-        return _prepareAmount(depositedA, amountB);
+        return prepareAmount(depositedA, amountB);
     }
 
     //
