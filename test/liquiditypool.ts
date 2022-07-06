@@ -1,27 +1,28 @@
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers'
 import { expect } from 'chai'
-import { BigNumber, constants } from 'ethers'
+import { BigNumber, constants, utils } from 'ethers'
 import { ethers } from 'hardhat'
-import { RDL as ERC20Mintable, LiquidityPool } from '../typechain'
+import { USDC, WETH, LiquidityPool } from '../typechain'
 
 describe('liquidity pool', () => {
-  let weth: ERC20Mintable,
-    usdc: ERC20Mintable,
+  let weth: WETH,
+    usdc: USDC,
     liquidityPool: LiquidityPool,
     owner: SignerWithAddress,
-    bob: SignerWithAddress
+    bob: SignerWithAddress,
+    alice: SignerWithAddress
 
   // let assumption we always start with 1weth = 500usdc
   const decimals = 18
 
   const deploy = async () => {
     // deploy weth
-    const wethFactory = await ethers.getContractFactory('RDL')
+    const wethFactory = await ethers.getContractFactory('WETH')
     weth = await wethFactory.deploy(decimals)
     await weth.deployed()
     weth.mint(constants.MaxUint256)
     // deploy usdc
-    const usdcFactory = await ethers.getContractFactory('RDL')
+    const usdcFactory = await ethers.getContractFactory('USDC')
     usdc = await usdcFactory.deploy(decimals)
     await usdc.deployed()
     usdc.mint(constants.MaxUint256)
@@ -32,7 +33,7 @@ describe('liquidity pool', () => {
     // approve max for pool
     await weth.approve(liquidityPool.address, constants.MaxUint256)
     await usdc.approve(liquidityPool.address, constants.MaxUint256)
-    ;[owner, bob] = await ethers.getSigners()
+    ;[owner, bob, alice] = await ethers.getSigners()
 
     weth.approve(liquidityPool.address, constants.MaxUint256)
     usdc.approve(liquidityPool.address, constants.MaxUint256)

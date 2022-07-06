@@ -74,6 +74,13 @@ contract LiquidityPool is ERC20 {
         return (neededA, _amountB);
     }
 
+    //
+    function getUserCurrentBalance() public view returns (uint256, uint256) {
+        uint256 currentLp = balanceOf(msg.sender);
+        uint256 depositedA = (currentLp * PRECISION) / REWARD_PER_TOKEN_A;
+        return prepareAmount(depositedA, amountB);
+    }
+
     // swap from x amount of token in to y amount of token out, y = k / (x + current amount of token in)
     function swap(
         address _tokenIn,
@@ -148,7 +155,7 @@ contract LiquidityPool is ERC20 {
             amountA >= _amountA && amountB >= _amountB,
             "withdraw amount not valid with pool balance"
         );
-        (uint256 depositedA, uint256 depositedB) = _getUserDepositedAmount();
+        (uint256 depositedA, uint256 depositedB) = getUserCurrentBalance();
         require(
             depositedA >= _amountA && depositedB >= _amountB,
             "withdraw amount not valid with user balance"
@@ -188,13 +195,6 @@ contract LiquidityPool is ERC20 {
             return amountA;
         }
         return amountB;
-    }
-
-    //
-    function _getUserDepositedAmount() private view returns (uint256, uint256) {
-        uint256 currentLp = balanceOf(msg.sender);
-        uint256 depositedA = (currentLp * PRECISION) / REWARD_PER_TOKEN_A;
-        return prepareAmount(depositedA, amountB);
     }
 
     //
